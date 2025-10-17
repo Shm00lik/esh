@@ -2,3 +2,5 @@
 .env
 .venv/
 __pycache__/
+print_source.py
+source.txt
