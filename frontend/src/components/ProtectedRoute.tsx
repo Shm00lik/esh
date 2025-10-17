@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getUserStatus } from '../api/ApiClient';
 import CenteredPage from './CenteredPage/CenteredPage';
 import { CircularProgress } from '@mui/material';
-import { User } from '../types';
+import type { User } from '../types';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -36,3 +36,4 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default ProtectedRoute;
+
