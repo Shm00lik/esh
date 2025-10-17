@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { getUserStatus, sendChatMessage } from '../../api/ApiClient';
 import CenteredPage from '../../components/CenteredPage/CenteredPage';
 import { Box, Button, CircularProgress, Typography, Container, Paper, TextField, IconButton } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { useWebSocket } from '../../contexts/SocketContext';
-import { User, ChatMessage } from '../../types';
+import type { User, ChatMessage } from '../../types';
 import './Home.scss';
 
 
@@ -17,7 +17,7 @@ const Home = () => {
     const [chatInput, setChatInput] = useState('');
     const navigate = useNavigate();
     const lastMessage = useWebSocket();
-    const messageTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map()).current;
+    const messageTimeouts = useRef<Map<string, number>>(new Map()).current;
 
     const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
         const id = `${Date.now()}-${Math.random()}`;

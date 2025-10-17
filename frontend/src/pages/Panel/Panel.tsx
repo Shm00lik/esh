@@ -5,7 +5,7 @@ import {
   TableHead, TableRow, TextField, Typography, Modal, Snackbar, Alert, Grid
 } from '@mui/material';
 import { useWebSocket } from '../../contexts/SocketContext';
-import { User } from '../../types';
+import type { User } from '../../types';
 
 const modalStyle = {
   position: 'absolute' as 'absolute',
@@ -93,14 +93,14 @@ const Panel = () => {
       <Typography variant="h3" component="h1" gutterBottom>Admin Panel</Typography>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid>
           <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography variant="h5" gutterBottom>User Management</Typography>
             <Button variant="contained" onClick={handleCreateQr}>Create User QR Code</Button>
             {qrCode && <Box mt={2} sx={{ textAlign: 'center' }}><Typography>New User QR Code:</Typography><img src={qrCode} alt="New User QR Code" style={{ maxWidth: '100%', height: 'auto' }} /></Box>}
           </Paper>
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid >
           <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography variant="h5" gutterBottom>Pinned Message</Typography>
             <TextField label="Message to pin" fullWidth value={pinnedMessage} onChange={(e) => setPinnedMessage(e.target.value)} sx={{ mb: 2 }}/>
@@ -110,7 +110,7 @@ const Panel = () => {
             </Box>
           </Paper>
         </Grid>
-        <Grid item xs={12}>
+        <Grid >
             <Typography variant="h5" gutterBottom sx={{mt: 2}}>Live Users</Typography>
             <TableContainer component={Paper}>
                 <Table>

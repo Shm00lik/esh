@@ -4,7 +4,7 @@ import {
   Box, Container, Paper, Typography, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Fade
 } from '@mui/material';
-import { LeaderboardUser } from '../../types';
+import type { LeaderboardUser } from '../../types';
 import './Leaderboard.scss';
 
 const Leaderboard = () => {
