@@ -9,6 +9,9 @@ export const getAllUsers = () => api.get('/users');
 
 // Admin API Calls
 export const createQrCode = () => api.post('/admin/create_qr');
+export const getQrForUser = (user_id: string) => api.get(`/admin/qr/${user_id}`);
 export const pinMessage = (message: string) => api.post('/admin/pin', { message });
 export const removePinnedMessage = () => api.delete('/admin/pin');
 export const updateUserBalance = (user_id: string, change: number) => api.post('/admin/update_balance', { user_id, change });
+export const deleteUser = (user_id: string) => api.delete(`/admin/user/${user_id}`);
+export const manageTimer = (action: 'start' | 'pause' | 'reset', duration_seconds?: number) => api.post('/admin/timer', { action, duration_seconds });

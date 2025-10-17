@@ -1,56 +1,90 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllUsers, transferCoins } from '../../api/ApiClient';
+import { getAllUsers, transferCoins, getUserStatus } from '../../api/ApiClient';
 import {
-  Box, Button, Container, Paper, Typography, Select, MenuItem,
-  TextField, FormControl, InputLabel, Alert, Snackbar, CircularProgress
+  Box, Button, Container, Paper, Typography, TextField,
+  CircularProgress, List, ListItem, ListItemButton, ListItemText,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import CenteredPage from '../../components/CenteredPage/CenteredPage';
+import type { User, SimpleUser } from '../../types';
 
-interface SimpleUser {
-  user_id: string;
-  username: string;
-}
+const COIN_ICON_URL = "https://i.imgur.com/Lh8jQ7i.png";
 
 const Transfer = () => {
   const [users, setUsers] = useState<SimpleUser[]>([]);
-  const [recipient, setRecipient] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState<SimpleUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUser, setSelectedUser] = useState<SimpleUser | null>(null);
   const [amount, setAmount] = useState<number | ''>('');
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchData = async () => {
       try {
-        const response = await getAllUsers();
-        // Filter out the current user from the list of recipients
-        const currentUserKey = localStorage.getItem('user_key');
-        const currentUser = response.data.find((u: any) => u.user_key === currentUserKey);
-        setUsers(response.data.filter((u: SimpleUser) => u.user_id !== currentUser?.user_id && u.username));
+        const [usersResponse, statusResponse] = await Promise.all([
+          getAllUsers(),
+          getUserStatus()
+        ]);
+        const activeUsers: SimpleUser[] = usersResponse.data.filter((u: SimpleUser) => u.username);
+        setUsers(activeUsers);
+        setFilteredUsers(activeUsers);
+        setCurrentUser(statusResponse.data);
       } catch (err) {
-        setError('Failed to load users.');
+        setError('טעינת הנתונים נכשלה.');
       } finally {
         setLoading(false);
       }
     };
-    fetchUsers();
+    fetchData();
   }, []);
 
-  const handleTransfer = async () => {
-    if (!recipient || !amount || amount <= 0) {
-      setError('Please select a recipient and enter a valid amount.');
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredUsers(users);
       return;
     }
+    setFilteredUsers(
+      users.filter(user =>
+        user.username.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    );
+  }, [searchTerm, users]);
+
+  const handleSelectUser = (user: SimpleUser) => {
+    setSelectedUser(user);
+    setError(''); // Clear previous errors
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedUser(null);
+    setAmount('');
     setError('');
-    setSuccess('');
+  };
+
+  const handleTransfer = async () => {
+    if (!selectedUser || !amount || amount <= 0) {
+      setError('אנא הזן/הזיני סכום תקין.');
+      return;
+    }
+    if (currentUser && amount > currentUser.esh) {
+      setError('אין מספיק יתרה.');
+      return;
+    }
+
+    setError('');
+    setIsSubmitting(true);
     try {
-      await transferCoins(recipient, Number(amount));
-      setSuccess(`Successfully transferred ${amount} esh!`);
-      setTimeout(() => navigate('/'), 2000); // Redirect after 2 seconds
+      await transferCoins(selectedUser.user_id, Number(amount));
+      navigate('/transfer/success', { state: { amount: Number(amount), recipientName: selectedUser.username } });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Transfer failed.');
+      setError(err.response?.data?.error || 'ההעברה נכשלה.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -60,65 +94,68 @@ const Transfer = () => {
 
   return (
     <CenteredPage>
-      <Container component="main" maxWidth="xs">
-        <Paper elevation={3} sx={{ p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <Typography variant="h4" component="h1" gutterBottom>
-            Transfer Esh
+      <Container component="main" maxWidth="sm" sx={{ py: 4, direction: 'rtl' }}>
+        <Paper elevation={3} sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
+          <Typography variant="h4" component="h1" gutterBottom align="center">
+            העברת אש
           </Typography>
-
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="recipient-label">To</InputLabel>
-            <Select
-              labelId="recipient-label"
-              value={recipient}
-              label="To"
-              onChange={(e) => setRecipient(e.target.value)}
-            >
-              {users.map((user) => (
-                <MenuItem key={user.user_id} value={user.user_id}>
-                  {user.username}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
           <TextField
-            label="Amount"
-            type="number"
             fullWidth
-            value={amount}
-            onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
-            sx={{ mt: 3 }}
-            inputProps={{ min: 1 }}
+            variant="outlined"
+            placeholder="חפש/י משתמש..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{ my: 2 }}
           />
-
-          <Box sx={{ mt: 3, width: '100%' }}>
-            <Button
-              variant="contained"
-              color="primary"
-              fullWidth
-              size="large"
-              onClick={handleTransfer}
-            >
-              Send
-            </Button>
-            <Button
-              variant="outlined"
-              fullWidth
-              size="large"
-              sx={{ mt: 1 }}
-              onClick={() => navigate('/')}
-            >
-              Cancel
-            </Button>
+          <Box sx={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <List>
+              {filteredUsers.map((user) => (
+                <ListItem key={user.user_id} disablePadding>
+                  <ListItemButton onClick={() => handleSelectUser(user)}>
+                    <ListItemText
+                      primary={user.username}
+                      primaryTypographyProps={{
+                        color: user.is_admin ? 'error' : 'text.primary',
+                        fontWeight: user.is_admin ? 'bold' : 'normal',
+                      }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
           </Box>
+          <Button variant="outlined" sx={{ mt: 2 }} onClick={() => navigate(-1)}>
+            חזרה
+          </Button>
         </Paper>
-        <Snackbar open={!!error} autoHideDuration={6000} onClose={() => setError('')}>
-            <Alert onClose={() => setError('')} severity="error" sx={{ width: '100%' }}>{error}</Alert>
-        </Snackbar>
-        <Snackbar open={!!success} autoHideDuration={2000} onClose={() => setSuccess('')}>
-            <Alert onClose={() => setSuccess('')} severity="success" sx={{ width: '100%' }}>{success}</Alert>
-        </Snackbar>
+
+        <Dialog open={!!selectedUser} onClose={handleCloseDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>שלח אש ל {selectedUser?.username}</DialogTitle>
+          <DialogContent>
+            <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              היתרה שלך: {currentUser?.esh} <img src={COIN_ICON_URL} alt="אש" style={{ height: '1em', verticalAlign: 'middle' }} />
+            </Typography>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="סכום"
+              type="number"
+              fullWidth
+              variant="standard"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
+              inputProps={{ min: 1 }}
+              error={!!error}
+              helperText={error}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog} disabled={isSubmitting}>ביטול</Button>
+            <Button onClick={handleTransfer} variant="contained" disabled={isSubmitting}>
+              {isSubmitting ? <CircularProgress size={24} /> : 'שלח'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Container>
     </CenteredPage>
   );

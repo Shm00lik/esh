@@ -1,236 +1,221 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  createQrCode,
-  pinMessage,
-  removePinnedMessage,
-  updateUserBalance,
+  createQrCode, pinMessage, removePinnedMessage, updateUserBalance,
+  getQrForUser, deleteUser, manageTimer
 } from "../../api/ApiClient";
 import {
-  Box,
-  Button,
-  Container,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-  Modal,
-  Snackbar,
-  Alert,
-  Grid,
+  Box, Button, Container, Paper, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, Typography, Snackbar, Alert,
+  Grid, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Card, CardContent, ButtonGroup
 } from "@mui/material";
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
+import QrCode2Icon from '@mui/icons-material/QrCode2';
+import HomeIcon from '@mui/icons-material/Home';
+import LeaderboardIcon from '@mui/icons-material/Leaderboard';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useWebSocket } from "../../contexts/SocketContext";
 import type { User } from "../../types";
+import './Panel.scss';
 
-const modalStyle = {
-  position: "absolute" as "absolute",
-  top: "50%",
-  left: "50%",
-  transform: "translate(-50%, -50%)",
-  width: 400,
-  bgcolor: "background.paper",
-  borderRadius: 2,
-  boxShadow: 24,
-  p: 4,
-};
+const COIN_ICON_URL = "https://i.imgur.com/Lh8jQ7i.png";
 
 const Panel = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [pinnedMessage, setPinnedMessage] = useState("");
-  const [qrCode, setQrCode] = useState("");
-  const [openModal, setOpenModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [balanceChange, setBalanceChange] = useState(0);
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    message: string;
-    severity: "success" | "error";
-  }>({ open: false, message: "", severity: "success" });
-  const lastMessage = useWebSocket();
-
-  useEffect(() => {
-    if (lastMessage && lastMessage.type === "users_update") {
-      setUsers(lastMessage.users);
-    }
-  }, [lastMessage]);
+  const { users } = useWebSocket();
+  const [pinnedMessageText, setPinnedMessageText] = useState("");
+  const [qrModal, setQrModal] = useState<{ open: boolean; qr?: string; username?: string }>({ open: false });
+  const [amountModal, setAmountModal] = useState<{ open: boolean; user?: User; action?: 'add' | 'subtract' }>({ open: false });
+  const [amount, setAmount] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; user?: User }>({ open: false });
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: "success" | "error"; }>({ open: false, message: "", severity: "success" });
+  const [timerDuration, setTimerDuration] = useState(5); // Default 5 minutes
+  const navigate = useNavigate();
 
   const handleCreateQr = async () => {
     try {
       const response = await createQrCode();
-      setQrCode(response.data.qr_base64);
+      setQrModal({ open: true, qr: response.data.qr_base64, username: "משתמש חדש" });
+      handleSnackbarOpen("קוד QR למשתמש חדש נוצר.", "success");
     } catch (error) {
-      handleSnackbarOpen("Failed to create QR code.", "error");
+      handleSnackbarOpen("יצירת קוד QR נכשלה.", "error");
     }
   };
 
+  const handleShowQr = async (user: User) => {
+    try {
+      const response = await getQrForUser(user.user_id);
+      setQrModal({ open: true, qr: response.data.qr_base64, username: user.username || `User...` });
+    } catch (error) {
+      handleSnackbarOpen("אחזור קוד QR נכשל.", "error");
+    }
+  }
+
   const handlePinMessage = async () => {
     try {
-      await pinMessage(pinnedMessage);
-      handleSnackbarOpen("Message pinned successfully!", "success");
+      await pinMessage(pinnedMessageText);
+      handleSnackbarOpen("ההודעה ננעצה בהצלחה!", "success");
     } catch (error) {
-      handleSnackbarOpen("Failed to pin message.", "error");
+      handleSnackbarOpen("נעיצת ההודעה נכשלה.", "error");
     }
   };
 
   const handleRemovePin = async () => {
     try {
       await removePinnedMessage();
-      handleSnackbarOpen("Pinned message removed.", "success");
-      setPinnedMessage("");
+      handleSnackbarOpen("ההודעה הנעוצה הוסרה.", "success");
+      setPinnedMessageText("");
     } catch (error) {
-      handleSnackbarOpen("Failed to remove pinned message.", "error");
+      handleSnackbarOpen("הסרת ההודעה הנעוצה נכשלה.", "error");
     }
-  };
-
-  const handleOpenBalanceModal = (user: any) => {
-    setSelectedUser(user);
-    setOpenModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setOpenModal(false);
-    setSelectedUser(null);
-    setBalanceChange(0);
   };
 
   const handleUpdateBalance = async (user: User, change: number) => {
-    if (!user) return;
+    if (!user || change === 0) return;
     try {
       await updateUserBalance(user.user_id, change);
-      handleSnackbarOpen(`Balance updated for ${user.username}.`, "success");
-      // No longer need to manually fetch, WebSocket will update the list
+      handleSnackbarOpen(`היתרה של ${user.username} עודכנה.`, "success");
     } catch (error) {
-      handleSnackbarOpen("Failed to update balance.", "error");
+      handleSnackbarOpen("עדכון היתרה נכשל.", "error");
     }
   };
 
-  const handleSnackbarOpen = (message: string, severity: "success" | "error") =>
-    setSnackbar({ open: true, message, severity });
+  const handleOpenAmountModal = (user: User, action: 'add' | 'subtract') => {
+    setAmountModal({ open: true, user, action });
+  };
+  const handleCloseAmountModal = () => {
+    setAmountModal({ open: false });
+    setAmount(0);
+  };
+  const handleConfirmAmount = async () => {
+    if (!amountModal.user || amount <= 0) return;
+    const change = amountModal.action === 'add' ? amount : -amount;
+    await handleUpdateBalance(amountModal.user, change);
+    handleCloseAmountModal();
+  };
+
+  const handleOpenDeleteConfirm = (user: User) => setDeleteConfirm({ open: true, user });
+  const handleCloseDeleteConfirm = () => setDeleteConfirm({ open: false });
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm.user) return;
+    try {
+      await deleteUser(deleteConfirm.user.user_id);
+      handleSnackbarOpen(`המשתמש ${deleteConfirm.user.username} נמחק.`, "success");
+    } catch (error: any) {
+      handleSnackbarOpen(error.response?.data?.error || "מחיקת המשתמש נכשלה.", "error");
+    } finally {
+      handleCloseDeleteConfirm();
+    }
+  };
+
+  const handleTimerAction = async (action: 'start' | 'pause' | 'reset') => {
+    try {
+      const duration = action === 'start' ? timerDuration * 60 : undefined;
+      await manageTimer(action, duration);
+      handleSnackbarOpen(`פעולת טיימר '${action}' הצליחה.`, 'success');
+    } catch (error) {
+      handleSnackbarOpen("ביצוע פעולת טיימר נכשל.", "error");
+    }
+  }
+
+  const handleSnackbarOpen = (message: string, severity: "success" | "error") => setSnackbar({ open: true, message, severity });
   const handleSnackbarClose = () => setSnackbar({ ...snackbar, open: false });
 
   return (
-    <Container sx={{ py: 4 }}>
-      <Typography variant="h3" component="h1" gutterBottom>
-        Admin Panel
-      </Typography>
+    <Container sx={{ py: 4, direction: 'rtl' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Typography variant="h3" component="h1">פאנל ניהול</Typography>
+        <ButtonGroup variant="outlined" aria-label="outlined primary button group">
+          <Button startIcon={<HomeIcon />} onClick={() => navigate('/')}>&nbsp;&nbsp;בית</Button>
+          <Button startIcon={<LeaderboardIcon />} onClick={() => navigate('/display')}>&nbsp;&nbsp;תצוגה</Button>
+        </ButtonGroup>
+      </Box>
 
       <Grid container spacing={3}>
-        <Grid>
-          <Paper
-            sx={{
-              p: 2,
-              display: "flex",
-              flexDirection: "column",
-              height: "100%",
-            }}
-          >
-            <Typography variant="h5" gutterBottom>
-              User Management
-            </Typography>
-            <Button variant="contained" onClick={handleCreateQr}>
-              Create User QR Code
-            </Button>
-            {qrCode && (
-              <Box mt={2} sx={{ textAlign: "center" }}>
-                <Typography>New User QR Code:</Typography>
-                <img
-                  src={qrCode}
-                  alt="New User QR Code"
-                  style={{ maxWidth: "100%", height: "auto" }}
-                />
+        <Grid size={{xs:12, md:4}}>
+          <Card sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom>קליטת משתמש חדש</Typography>
+              <Button variant="contained" onClick={handleCreateQr} fullWidth>צור קוד QR</Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid size={{xs:12, md:8}}>
+          <Card sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography variant="h5" gutterBottom>הודעה נעוצה</Typography>
+              <TextField
+                label="הודעה לנעיצה"
+                fullWidth
+                value={pinnedMessageText}
+                onChange={(e) => setPinnedMessageText(e.target.value)}
+                sx={{ mb: 2 }}
+                InputLabelProps={{ shrink: true }}
+              />
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button variant="contained" onClick={handlePinMessage}>נעל הודעה</Button>
+                <Button variant="outlined" color="error" onClick={handleRemovePin}>הסר נעיצה</Button>
               </Box>
-            )}
-          </Paper>
+            </CardContent>
+          </Card>
         </Grid>
-        <Grid>
-          <Paper
-            sx={{
-              p: 2,
-              display: "flex",
-              flexDirection: "column",
-              height: "100%",
-            }}
-          >
-            <Typography variant="h5" gutterBottom>
-              Pinned Message
-            </Typography>
-            <TextField
-              label="Message to pin"
-              fullWidth
-              value={pinnedMessage}
-              onChange={(e) => setPinnedMessage(e.target.value)}
-              sx={{ mb: 2 }}
-            />
-            <Box>
-              <Button
-                variant="contained"
-                onClick={handlePinMessage}
-                sx={{ mr: 1 }}
-              >
-                Pin Message
-              </Button>
-              <Button
-                variant="outlined"
-                color="error"
-                onClick={handleRemovePin}
-              >
-                Remove Pin
-              </Button>
-            </Box>
-          </Paper>
+
+        <Grid size={{xs:12}}>
+          <Card>
+            <CardContent>
+              <Typography variant="h5" gutterBottom>טיימר משחק</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                <TextField
+                  label="משך (דקות)"
+                  type="number"
+                  value={timerDuration}
+                  onChange={(e) => setTimerDuration(Math.max(0, Number(e.target.value)))}
+                  sx={{ width: '150px' }}
+                  InputLabelProps={{ shrink: true }}
+                />
+                <Button variant="contained" color="success" onClick={() => handleTimerAction('start')}>הגדר והפעל</Button>
+                <Button variant="contained" color="warning" onClick={() => handleTimerAction('pause')}>השהה/המשך</Button>
+                <Button variant="contained" color="error" onClick={() => handleTimerAction('reset')}>איפוס</Button>
+              </Box>
+            </CardContent>
+          </Card>
         </Grid>
-        <Grid>
-          <Typography variant="h5" gutterBottom sx={{ mt: 2 }}>
-            Live Users
-          </Typography>
+
+        <Grid size={{xs:12}}>
+          <Typography variant="h5" gutterBottom sx={{ mt: 2 }}>משתמשים מחוברים</Typography>
           <TableContainer component={Paper}>
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Username</TableCell>
-                  <TableCell>User ID</TableCell>
-                  <TableCell align="right">Balance (esh)</TableCell>
-                  <TableCell>Is Admin</TableCell>
-                  <TableCell align="center">Actions</TableCell>
+                  <TableCell align="right">שם משתמש</TableCell>
+                  <TableCell align="center">מזהה</TableCell>
+                  <TableCell align="center">יתרה</TableCell>
+                  <TableCell align="center">פעולות</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {users.map((user) => (
-                  <TableRow key={user.user_id}>
-                    <TableCell>{user.username || "N/A"}</TableCell>
-                    <TableCell>{user.user_id}</TableCell>
-                    <TableCell>{user.esh}</TableCell>
-                    <TableCell>{user.is_admin ? "Yes" : "No"}</TableCell>
+                  <TableRow key={user.user_id} className={user.is_admin ? 'admin-row' : ''}>
+                    <TableCell align="right">
+                      <Typography fontWeight={user.is_admin ? 'bold' : 'normal'}>
+                        {user.username || "אין שם"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center"><Typography variant="body2" color="textSecondary">{user.user_id.substring(0,8)}...</Typography></TableCell>
                     <TableCell align="center">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="success"
-                        onClick={() => handleUpdateBalance(user, 1)}
-                        sx={{ mr: 0.5 }}
-                      >
-                        +
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        onClick={() => handleUpdateBalance(user, -1)}
-                        sx={{ ml: 0.5 }}
-                      >
-                        -
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() => handleOpenBalanceModal(user)}
-                        sx={{ ml: 1 }}
-                      >
-                        Custom
-                      </Button>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          {user.esh}
+                          <img src={COIN_ICON_URL} alt="אש" style={{ height: '1.2em', width: '1.2em' }} />
+                      </Box>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip title="הוסף אש"><IconButton size="small" color="success" onClick={() => handleOpenAmountModal(user, 'add')}><AddIcon /></IconButton></Tooltip>
+                      <Tooltip title="הסר אש"><IconButton size="small" color="error" onClick={() => handleOpenAmountModal(user, 'subtract')}><RemoveIcon /></IconButton></Tooltip>
+                      <Tooltip title="הצג קוד QR"><IconButton size="small" onClick={() => handleShowQr(user)}><QrCode2Icon /></IconButton></Tooltip>
+                      {!user.is_admin && (
+                         <Tooltip title="מחק משתמש"><IconButton size="small" onClick={() => handleOpenDeleteConfirm(user)}><DeleteIcon /></IconButton></Tooltip>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -240,54 +225,43 @@ const Panel = () => {
         </Grid>
       </Grid>
 
-      <Modal open={openModal} onClose={handleCloseModal}>
-        <Box sx={modalStyle}>
-          <Typography variant="h6">
-            Update balance for {selectedUser?.username}
-          </Typography>
-          <Typography sx={{ mt: 1 }}>
-            Current balance: {selectedUser?.esh}
-          </Typography>
-          <TextField
-            label="Change amount (+/-)"
-            type="number"
-            fullWidth
-            value={balanceChange}
-            onChange={(e) =>
-              setBalanceChange(parseInt(e.target.value, 10) || 0)
-            }
-            sx={{ mt: 2 }}
-          />
-          <Button
-            onClick={() => {
-              if (selectedUser) {
-                handleUpdateBalance(selectedUser, balanceChange);
-              }
-              handleCloseModal();
-            }}
-            sx={{ mt: 2 }}
-            variant="contained"
-          >
-            Update
-          </Button>
-        </Box>
-      </Modal>
+      <Dialog open={amountModal.open} onClose={handleCloseAmountModal}>
+        <DialogTitle>{amountModal.action === 'add' ? 'הוסף ליתרה של' : 'החסר מהיתרה של'} {amountModal.user?.username}</DialogTitle>
+        <DialogContent>
+          <Typography>יתרה נוכחית: {amountModal.user?.esh}</Typography>
+          <TextField autoFocus margin="dense" label="סכום" type="number" fullWidth value={amount} onChange={(e) => setAmount(Math.max(0, parseInt(e.target.value, 10) || 0))} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAmountModal}>ביטול</Button>
+          <Button onClick={handleConfirmAmount} variant="contained">אישור</Button>
+        </DialogActions>
+      </Dialog>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleSnackbarClose}
-      >
-        <Alert
-          onClose={handleSnackbarClose}
-          severity={snackbar.severity}
-          sx={{ width: "100%" }}
-        >
-          {snackbar.message}
-        </Alert>
+      <Dialog open={deleteConfirm.open} onClose={handleCloseDeleteConfirm}>
+        <DialogTitle>למחוק משתמש?</DialogTitle>
+        <DialogContent><Typography>האם אתה בטוח שברצונך למחוק לצמיתות את {deleteConfirm.user?.username || 'המשתמש הזה'}? לא ניתן לבטל פעולה זו.</Typography></DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteConfirm}>ביטול</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">מחק</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={qrModal.open} onClose={() => setQrModal({ open: false })} maxWidth="sm">
+        <DialogTitle>קוד QR עבור {qrModal.username}</DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', p: 4 }}>
+          {qrModal.qr ? <img src={qrModal.qr} alt="User QR Code" style={{ width: '100%', maxWidth: '350px', height: 'auto', borderRadius: '8px' }} /> : 'טוען...'}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrModal({ open: false })}>סגור</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={handleSnackbarClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert onClose={handleSnackbarClose} severity={snackbar.severity} sx={{ width: "100%" }} variant="filled">{snackbar.message}</Alert>
       </Snackbar>
     </Container>
   );
 };
 
 export default Panel;
+

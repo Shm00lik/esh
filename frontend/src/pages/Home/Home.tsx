@@ -4,68 +4,47 @@ import { getUserStatus, sendChatMessage } from '../../api/ApiClient';
 import CenteredPage from '../../components/CenteredPage/CenteredPage';
 import { Box, Button, CircularProgress, Typography, Container, Paper, TextField, IconButton } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import LeaderboardIcon from '@mui/icons-material/Leaderboard';
+import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
 import { useWebSocket } from '../../contexts/SocketContext';
-import type { User, ChatMessage } from '../../types';
+import type { User } from '../../types';
 import './Home.scss';
 
+const COIN_ICON_URL = "https://i.imgur.com/Lh8jQ7i.png";
 
 const Home = () => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [pinnedMessage, setPinnedMessage] = useState<string | null>(null);
     const [chatInput, setChatInput] = useState('');
     const navigate = useNavigate();
-    const lastMessage = useWebSocket();
-    const messageTimeouts = useRef<Map<string, number>>(new Map()).current;
+    const { chatMessages, pinnedMessage, users } = useWebSocket();
+    const chatAreaRef = useRef<HTMLDivElement>(null);
 
-    const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
-        const id = `${Date.now()}-${Math.random()}`;
-        const timestamp = Date.now();
-        const newMessage = { ...msg, id, timestamp };
-
-        setMessages(prev => [...prev, newMessage].slice(-20)); // Keep last 20 messages
-
-        const timeoutId = setTimeout(() => {
-            setMessages(prev => prev.filter(m => m.id !== id));
-            messageTimeouts.delete(id);
-        }, 15000); // Message fades after 15 seconds
-        messageTimeouts.set(id, timeoutId);
-    };
-
+    // Effect for auto-scrolling chat
     useEffect(() => {
-        return () => {
-            // Cleanup timeouts on component unmount
-            messageTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
-        };
-    }, [messageTimeouts]);
-
-    useEffect(() => {
-        if (!lastMessage) return;
-
-        switch (lastMessage.type) {
-            case 'message':
-                addMessage({ from: lastMessage.from, text: lastMessage.text, pinned: lastMessage.pinned });
-                break;
-            case 'pinned':
-                setPinnedMessage(lastMessage.text);
-                break;
-            case 'pin_removed':
-                setPinnedMessage(null);
-                break;
-            case 'coins_update':
-                if (user && lastMessage.user_id === user.user_id) {
-                    setUser(prev => prev ? { ...prev, esh: lastMessage.esh } : null);
-                }
-                break;
+        if (chatAreaRef.current) {
+            chatAreaRef.current.scrollTop = chatAreaRef.current.scrollHeight;
         }
-    }, [lastMessage, user]);
+    }, [chatMessages]);
 
+    // Effect for live coin updates
+    useEffect(() => {
+        if (user) {
+            const updatedSelf = users.find(u => u.user_id === user.user_id);
+            if (updatedSelf && updatedSelf.esh !== user.esh) {
+                // Update user state with new coin balance from WebSocket
+                setUser(prevUser => ({ ...prevUser!, esh: updatedSelf.esh }));
+            }
+        }
+    }, [users, user]);
+
+    // Initial user status fetch
     useEffect(() => {
         const fetchStatus = async () => {
             const userKey = localStorage.getItem('user_key');
             if (!userKey) {
-                setLoading(false);
+                navigate('/qr-request');
                 return;
             }
 
@@ -76,9 +55,14 @@ const Home = () => {
                 } else {
                     navigate('/login');
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Failed to fetch user status", error);
                 localStorage.removeItem('user_key');
+                if (error.response?.status === 401) {
+                    navigate('/qr-request');
+                } else {
+                    navigate('/login');
+                }
             } finally {
                 setLoading(false);
             }
@@ -97,72 +81,97 @@ const Home = () => {
         }
     };
 
-
     if (loading) {
         return <CenteredPage><CircularProgress /></CenteredPage>
     }
 
     if (!user) {
-        return (
-            <CenteredPage>
-                <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h5">Could not verify user.</Typography>
-                    <Typography>Please scan a valid QR code to begin.</Typography>
-                </Box>
-            </CenteredPage>
-        )
+        return null; // Should be redirected
     }
 
     return (
-        <Container component="main" maxWidth="md" sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-            <Paper elevation={3} sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, direction: 'rtl' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, direction: 'ltr' }}>
-                    <Box>
+        <Container component="main" maxWidth="md" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', py: { xs: 0, sm: 2 }, px: { xs: 0, sm: 2 } }}>
+            <Paper elevation={3} sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, direction: 'rtl', overflow: 'hidden', height: '100%', borderRadius: { xs: 0, sm: 4 } }}>
+                {/* Header Section */}
+                <Box sx={{ mb: 2, px: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                         <Typography variant="h5" component="h1">
                             {user.username}
                         </Typography>
-                        <Typography variant="h6" color="text.secondary">
-                            Balance: {user.esh} esh
+                        <Typography variant="h4" sx={{
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            color: '#FFD700',
+                            textShadow: '1px 1px 3px rgba(0,0,0,0.5)',
+                        }}>
+                            {user.esh} <img src={COIN_ICON_URL} alt="אש" style={{ height: '1em', verticalAlign: 'middle' }} />
                         </Typography>
                     </Box>
-                    <Box>
-                        <Button variant="contained" onClick={() => navigate('/transfer')}>
-                            Send
+                    <Box sx={{ mt: 2 }}>
+                        <Button
+                            variant="contained"
+                            size="large"
+                            fullWidth
+                            onClick={() => navigate('/transfer')}
+                            startIcon={<CurrencyExchangeIcon />}
+                            sx={{
+                                color: '#2f2f2f',
+                                background: 'linear-gradient(45deg, #FFD700 30%, #FFC107 90%)',
+                                '&:hover': {
+                                    background: 'linear-gradient(45deg, #FFCA28 30%, #FFD54F 90%)',
+                                },
+                                boxShadow: '0 3px 5px 2px rgba(255, 105, 135, .3)',
+                                mb: 1,
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            &nbsp;&nbsp;שלח מטבעות
                         </Button>
                         {user.is_admin && (
-                           <Button variant="outlined" onClick={() => navigate('/panel')} sx={{ml: 1}}>
-                                Admin
-                           </Button>
+                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                                <Button variant="outlined" onClick={() => navigate('/panel')} startIcon={<AdminPanelSettingsIcon />}>
+                                    &nbsp;&nbsp;ניהול
+                                </Button>
+                                <Button variant="outlined" onClick={() => navigate('/display')} startIcon={<LeaderboardIcon />}>
+                                    &nbsp;&nbsp;תצוגה
+                                </Button>
+                            </Box>
                         )}
                     </Box>
                 </Box>
 
-                {pinnedMessage && (
-                    <Box className="pinned-message" sx={{ direction: 'ltr' }}>
-                        <Typography variant="body1"><strong>Pinned:</strong> {pinnedMessage}</Typography>
-                    </Box>
-                )}
-
-                <Box className="chat-area">
-                    {messages.map((msg) => (
-                        <Box key={msg.id} className="chat-message" sx={{ opacity: (Date.now() - msg.timestamp) > 12000 ? 0 : 1 }}>
-                            <Typography><strong>{msg.from}:</strong> {msg.text}</Typography>
+                {/* Main Content (Chat) */}
+                <Box className="chat-area-wrapper">
+                    {pinnedMessage && (
+                        <Box className="pinned-message">
+                            <Typography variant="body1"><strong>הודעה נעוצה:</strong> {pinnedMessage}</Typography>
                         </Box>
-                    ))}
+                    )}
+                    <Box ref={chatAreaRef} className="chat-area">
+                        {chatMessages.map((msg) => (
+                            <Box key={msg.id} className={`chat-message ${msg.is_admin ? 'admin-message' : ''}`}>
+                                <Typography><strong>{msg.from}:</strong> {msg.text}</Typography>
+                            </Box>
+                        ))}
+                    </Box>
                 </Box>
 
-                <Box sx={{ mt: 'auto', pt: 2, display: 'flex', gap: 1 }}>
-                    <TextField
-                        fullWidth
-                        variant="outlined"
-                        placeholder="Type a message..."
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
-                    />
+                {/* Footer (Chat Input) */}
+                <Box sx={{ mt: 'auto', pt: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
                     <IconButton color="primary" onClick={handleSendChat}>
                         <SendIcon />
                     </IconButton>
+                    <TextField
+                        fullWidth
+                        variant="outlined"
+                        placeholder="הקלד/י הודעה..."
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+
+                    />
                 </Box>
             </Paper>
         </Container>
@@ -170,4 +179,3 @@ const Home = () => {
 };
 
 export default Home;
-

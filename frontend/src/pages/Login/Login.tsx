@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+// import { useNavigate } from "react-router-dom";
 import CenteredPage from "../../components/CenteredPage/CenteredPage";
 import "./Login.scss";
 import { Button, TextField, Typography, Alert, Box } from "@mui/material";
@@ -8,22 +8,23 @@ import { loginUser } from "../../api/ApiClient";
 const Login = () => {
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
 
   const handleLogin = async () => {
     if (!username.trim()) {
-      setError("Username cannot be empty.");
+      setError("שם המשתמש לא יכול להיות ריק.");
       return;
     }
     setError("");
     try {
       await loginUser(username);
-      navigate("/");
+      // Full page reload to ensure WebSocket connects
+      window.location.assign("/");
     } catch (err: any) {
       if (err.response && err.response.status === 409) {
-        setError("Username is already taken. Please choose another one.");
+        setError("שם המשתמש תפוס. אנא בחר/י שם אחר.");
       } else {
-        setError("An unexpected error occurred. Please try again.");
+        setError("אירעה שגיאה בלתי צפויה. אנא נסה/י שוב.");
         console.error("Login failed:", err);
       }
     }
@@ -31,16 +32,16 @@ const Login = () => {
 
   return (
     <CenteredPage>
-      <Box className="login" sx={{p: 3, maxWidth: 400, width: '100%'}}>
+      <Box className="login" sx={{p: 3, maxWidth: 400, width: '100%', direction: 'rtl'}}>
         <Typography variant="h4" component="h1" gutterBottom>
-          Initial Login
+          כניסה ראשונית
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 2.5, textAlign: 'center' }}>
-            Choose a username to get started.
+            בחר/י שם משתמש כדי להתחיל.
         </Typography>
 
         <TextField
-          label="Username"
+          label="שם משתמש"
           variant="outlined"
           fullWidth
           value={username}
@@ -58,7 +59,7 @@ const Login = () => {
             size="large"
             sx={{ mt: 2 }}
         >
-          Login
+          כניסה
         </Button>
       </Box>
     </CenteredPage>

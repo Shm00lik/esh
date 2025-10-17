@@ -1,0 +1,187 @@
+@import url('https://fonts.googleapis.com/css2?family=Secular+One&display=swap');
+
+
+.display-container {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  padding: 2rem;
+  background: linear-gradient(135deg, #0A192F 0%, #112240 100%);
+  color: #E0E6ED;
+  box-sizing: border-box;
+  transition: background 0.5s ease-in-out, color 0.5s ease-in-out;
+}
+
+body[data-mui-color-scheme='dark'] .display-container {
+  background: linear-gradient(135deg, #0A192F 0%, #1E3A5F 100%);
+  color: #E6EEF8;
+}
+
+.display-panel {
+  background-color: rgba(17, 34, 64, 0.85);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(56, 97, 152, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 51, 102, 0.4);
+  transition: background-color 0.5s ease-in-out, box-shadow 0.5s ease-in-out;
+}
+
+body[data-mui-color-scheme='dark'] .display-panel {
+  background-color: rgba(20, 40, 70, 0.9);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.leaderboard-panel {
+  align-items: center;
+  text-align: center;
+}
+
+.panel-title {
+  font-size: 3.5rem !important;
+  font-weight: 800 !important;
+  font-family: "Secular One", sans-serif !important;
+  margin-bottom: 1.5rem !important;
+  text-align: center;
+  color: #64b5f6;
+  text-shadow: 0 0 10px rgba(100, 181, 246, 0.2);
+  transition: color 0.5s ease-in-out, text-shadow 0.5s ease-in-out;
+}
+
+body[data-mui-color-scheme='dark'] .panel-title {
+  color: #90caf9;
+  text-shadow: 0 0 15px rgba(144, 202, 249, 0.3);
+}
+
+/* Leaderboard Specific */
+.leaderboard-table .MuiTableCell-root {
+  border-bottom: 1px solid rgba(100, 149, 237, 0.2) !important;
+  padding: 1rem !important;
+  font-size: 1.75rem !important;
+  color: #d0d8e6;
+  transition: color 0.5s ease-in-out, border-color 0.5s ease-in-out;
+}
+
+.leaderboard-table .MuiTableRow-head .MuiTableCell-root {
+  font-weight: bold;
+  font-size: 1.5rem !important;
+  color: #64b5f6;
+}
+
+body[data-mui-color-scheme='dark'] .leaderboard-table .MuiTableCell-root {
+  border-bottom: 1px solid rgba(230, 242, 255, 0.12) !important;
+  color: #E0E6ED;
+}
+
+body[data-mui-color-scheme='dark'] .leaderboard-table .MuiTableRow-head .MuiTableCell-root {
+  color: #90caf9;
+}
+
+.rank-number-display {
+  font-weight: 700;
+  font-size: 2.25rem;
+  color: #2196f3;
+  transition: color 0.5s ease-in-out;
+}
+
+body[data-mui-color-scheme='dark'] .rank-number-display {
+  color: #82b1ff;
+}
+
+.esh-balance-display {
+  font-weight: 700;
+  color: #00bcd4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: color 0.5s ease-in-out;
+}
+body[data-mui-color-scheme='dark'] .esh-balance-display {
+  color: #26c6da;
+}
+
+.esh-balance-display img {
+  height: 1.5em;
+  width: 1.5em;
+}
+
+.rank-0-display {
+  background-color: rgba(41, 121, 255, 0.15) !important;
+}
+
+/* Chat Specific */
+.chat-feed-display-wrapper {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.chat-feed-display {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-left: 1rem;
+  padding-right: 0;
+}
+
+.chat-message-display {
+  background-color: #1e3a5f;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  max-width: 90%;
+  align-self: flex-start;
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: #e6eef8;
+  direction: rtl !important;
+}
+
+.chat-message-display strong {
+  color: #64b5f6;
+}
+
+.chat-message-display.admin-message-display {
+  background-color: #243b61;
+  border: 1px solid #4f6fa8;
+}
+.chat-message-display.admin-message-display strong {
+  color: #90caf9;
+}
+
+.pinned-message-display {
+  background-color: #0d1b33;
+  border: 1px solid #3f63a8;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: #d0d8e6;
+}
+
+.pinned-message-display strong {
+  color: #64b5f6;
+}
+
+body[data-mui-color-scheme='dark'] .pinned-message-display {
+  background-color: #14253f;
+  border-color: #3f63a8;
+  color: #e6eef8;
+}
+body[data-mui-color-scheme='dark'] .pinned-message-display strong {
+  color: #90caf9;
+}
+
+.display-container .MuiTypography-root.MuiTypography-body1 {
+  text-align: center;
+  font-weight: bold;
+  font-size: 2rem;
+  color: #64b5f6;
+}
