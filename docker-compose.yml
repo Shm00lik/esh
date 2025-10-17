@@ -30,7 +30,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
       - POSTGRES_DB=${POSTGRES_DB:-esh}
       - POSTGRES_HOST=db
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://192.168.50.161:3000}
     depends_on:
       db:
         condition: service_healthy

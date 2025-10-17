@@ -1,3 +1,4 @@
 sanic
 asyncpg
 qrcode[pil]
+sanic-cors

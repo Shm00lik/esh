@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import time
 import uuid
 from functools import wraps
 
@@ -10,14 +11,34 @@ import asyncpg
 import qrcode
 from sanic import Sanic, response
 from sanic.log import logger
+from sanic_cors import CORS
 
 # --- App Initialization ---
 app = Sanic("Esh")
-app.config.CORS_ORIGINS = "*"
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --- In-memory State ---
 PINNED_MESSAGE = None
 WEBSOCKETS = set()
+TIMER_STATE = {
+    "end_time": None,  # Timestamp when the timer should end
+    "duration": 0,     # Original duration in seconds
+    "paused_at": None, # Timestamp when the timer was paused
+    "is_running": False
+}
+
+# --- Timer Background Task ---
+async def timer_ticker(app):
+    while True:
+        if TIMER_STATE["is_running"] and not TIMER_STATE["paused_at"]:
+            await broadcast({"type": "timer_update", "state": TIMER_STATE})
+            now = time.time()
+            if now >= TIMER_STATE["end_time"]:
+                TIMER_STATE["is_running"] = False
+                # Send one final update
+                await broadcast({"type": "timer_update", "state": TIMER_STATE})
+                logger.info("Timer finished.")
+        await asyncio.sleep(1)
 
 
 # --- Database Setup ---
@@ -26,10 +47,11 @@ async def setup_db(app, loop):
         user=os.getenv("POSTGRES_USER", "user"),
         password=os.getenv("POSTGRES_PASSWORD", "password"),
         database=os.getenv("POSTGRES_DB", "esh"),
-        host=os.getenv("POSTGRES_HOST", "localhost"),
+        host=os.getenv("POSTGRES_HOST", "db"),
         port=os.getenv("POSTGRES_PORT", 5432),
     )
-    logger.info("Database connection pool created.")
+    app.add_task(timer_ticker(app))
+    logger.info("Database connection pool created and timer task started.")
 
 
 async def close_db(app, loop):
@@ -49,13 +71,25 @@ def auth_required(handler):
         if not user_key:
             return response.json({"error": "Missing X-User-Key header"}, status=401)
 
-        async with app.ctx.db_pool.acquire() as conn:
-            user = await conn.fetchrow(
-                "SELECT * FROM users WHERE user_key = $1", user_key
-            )
+        user = None
+        # Retry logic to handle potential db connection race on startup
+        for i in range(3):
+            try:
+                async with app.ctx.db_pool.acquire() as conn:
+                    user = await conn.fetchrow(
+                        "SELECT * FROM users WHERE user_key = $1", user_key
+                    )
+                if user:
+                    break
+            except Exception as e:
+                logger.error(f"DB connection error (attempt {i+1}): {e}")
+                if i < 2:
+                    await asyncio.sleep(0.5)
+                else:
+                    return response.json({"error": "Database connection failed"}, status=500)
 
         if not user:
-            return response.json({"error": "Invalid user key"}, status=403)
+            return response.json({"error": "Invalid user key"}, status=401)
 
         request.ctx.user = user
         return await handler(request, *args, **kwargs)
@@ -76,11 +110,81 @@ def admin_required(handler):
 # --- WebSocket Helper ---
 async def broadcast(message):
     if WEBSOCKETS:
-        tasks = [ws.send(json.dumps(message)) for ws in WEBSOCKETS]
-        await asyncio.gather(*tasks, return_exceptions=False)
+        tasks = [asyncio.create_task(ws.send(json.dumps(message))) for ws in WEBSOCKETS]
+        for task in tasks:
+            task.add_done_callback(lambda t: t.exception() and logger.error(f"WS send failed: {t.exception()}"))
+
+
+async def broadcast_users(pool):
+    """Fetches all users and broadcasts them."""
+    async with pool.acquire() as conn:
+        users = await conn.fetch("SELECT user_id, user_key, username, is_admin, esh FROM users ORDER BY username")
+    await broadcast({"type": "users_update", "users": [dict(u) for u in users]})
+    logger.debug("Broadcasted user list update.")
+
+
+async def broadcast_leaderboard(pool):
+    """Fetches top users and broadcasts the leaderboard."""
+    async with pool.acquire() as conn:
+        leaderboard = await conn.fetch(
+            "SELECT user_id, username, esh FROM users WHERE username IS NOT NULL ORDER BY esh DESC LIMIT 10"
+        )
+    await broadcast({"type": "leaderboard", "users": [dict(u) for u in leaderboard]})
+    logger.debug("Broadcasted leaderboard update.")
+
+
+def generate_qr_for_key(user_key):
+    frontend_url = os.getenv("FRONTEND_URL", "http://192.168.50.161:5173")
+    full_url = f"{frontend_url}/init?user_key={user_key}"
+    qr_img = qrcode.make(full_url, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+    buffered = io.BytesIO()
+    qr_img.save(buffered, format="PNG")
+    qr_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{qr_base64}"
 
 
 # --- Admin Routes ---
+@app.post("/admin/timer")
+@auth_required
+@admin_required
+async def manage_timer(request):
+    global TIMER_STATE
+    action = request.json.get("action")
+    duration_seconds = request.json.get("duration_seconds", 0)
+
+    if action == "start":
+        now = time.time()
+        TIMER_STATE = {
+            "end_time": now + duration_seconds,
+            "duration": duration_seconds,
+            "paused_at": None,
+            "is_running": True
+        }
+        logger.info(f"Timer started for {duration_seconds} seconds.")
+    elif action == "pause":
+        if TIMER_STATE["is_running"]:
+            if TIMER_STATE["paused_at"]:  # It's paused, so resume
+                paused_duration = time.time() - TIMER_STATE["paused_at"]
+                TIMER_STATE["end_time"] += paused_duration
+                TIMER_STATE["paused_at"] = None
+                logger.info("Timer resumed.")
+            else:  # It's running, so pause
+                TIMER_STATE["paused_at"] = time.time()
+                logger.info("Timer paused.")
+    elif action == "reset":
+        TIMER_STATE = {
+            "end_time": None,
+            "duration": 0,
+            "paused_at": None,
+            "is_running": False
+        }
+        logger.info("Timer reset.")
+    else:
+        return response.json({"error": "Invalid action"}, status=400)
+
+    await broadcast({"type": "timer_update", "state": TIMER_STATE})
+    return response.json(TIMER_STATE)
+
 @app.post("/admin/create_qr")
 @auth_required
 @admin_required
@@ -98,20 +202,29 @@ async def create_qr(request):
             user_key,
         )
 
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    full_url = f"{frontend_url}/init?user_key={user_key}"
-    qr_img = qrcode.make(full_url)
-    buffered = io.BytesIO()
-    qr_img.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    qr_base64 = generate_qr_for_key(user_key)
+    await broadcast_users(app.ctx.db_pool)
 
     return response.json(
         {
             "user_id": user_id,
             "user_key": user_key,
-            "qr_base64": f"data:image/png;base64,{qr_base64}",
+            "qr_base64": qr_base64,
         }
     )
+
+@app.get("/admin/qr/<user_id:str>")
+@auth_required
+@admin_required
+async def get_user_qr(request, user_id):
+    async with app.ctx.db_pool.acquire() as conn:
+        user_key = await conn.fetchval("SELECT user_key FROM users WHERE user_id = $1", user_id)
+
+    if not user_key:
+        return response.json({"error": "User not found"}, status=404)
+
+    qr_data = generate_qr_for_key(user_key)
+    return response.json({"user_id": user_id, "qr_base64": qr_data})
 
 
 @app.post("/admin/pin")
@@ -152,8 +265,28 @@ async def update_balance(request):
         await broadcast(
             {"type": "coins_update", "user_id": user_id, "esh": new_balance}
         )
+        await broadcast_leaderboard(app.ctx.db_pool)
+        await broadcast_users(app.ctx.db_pool)
         return response.json({"user_id": user_id, "new_balance": new_balance})
     return response.json({"error": "User not found"}, status=404)
+
+
+@app.delete("/admin/user/<user_id:str>")
+@auth_required
+@admin_required
+async def delete_user(request, user_id):
+    async with app.ctx.db_pool.acquire() as conn:
+        user_to_delete = await conn.fetchrow("SELECT is_admin FROM users WHERE user_id = $1", user_id)
+        if user_to_delete and user_to_delete['is_admin']:
+            return response.json({"error": "Cannot delete an admin user."}, status=403)
+
+        result = await conn.execute("DELETE FROM users WHERE user_id = $1", user_id)
+
+    if result == 'DELETE 1':
+        await broadcast_users(app.ctx.db_pool)
+        await broadcast_leaderboard(app.ctx.db_pool)
+        return response.json({"deleted": True})
+    return response.json({"error": "User not found or could not be deleted."}, status=404)
 
 
 # --- User Routes ---
@@ -166,9 +299,8 @@ async def user_login(request):
     user = request.ctx.user
 
     async with app.ctx.db_pool.acquire() as conn:
-        # Check if username is already taken by another user
         existing_user = await conn.fetchval(
-            "SELECT 1 FROM users WHERE username = $1 AND user_id != $2",
+            "SELECT 1 FROM users WHERE username ILIKE $1 AND user_id != $2",
             username,
             user["user_id"],
         )
@@ -181,6 +313,9 @@ async def user_login(request):
             user["user_id"],
         )
 
+    await broadcast_users(app.ctx.db_pool)
+    await broadcast_leaderboard(app.ctx.db_pool)
+
     return response.json(
         {"user_id": user["user_id"], "username": username, "esh": user["esh"]}
     )
@@ -190,7 +325,12 @@ async def user_login(request):
 @auth_required
 async def user_status(request):
     user = request.ctx.user
-    return response.json({"username": user["username"], "esh": user["esh"]})
+    return response.json({
+        "username": user["username"],
+        "esh": user["esh"],
+        "is_admin": user["is_admin"],
+        "user_id": user["user_id"],
+    })
 
 
 @app.post("/user/chat")
@@ -198,11 +338,15 @@ async def user_status(request):
 async def user_chat(request):
     message = request.json.get("message")
     user = request.ctx.user
+    if not user["username"]:
+        return response.json({"error": "User must set a username to chat"}, status=403)
+
     await broadcast(
         {
             "type": "message",
             "from": user["username"],
             "text": message,
+            "is_admin": user["is_admin"],
         }
     )
     return response.json({"sent": True})
@@ -219,18 +363,23 @@ async def user_transfer(request):
         return response.json({"error": "Amount must be positive"}, status=400)
     if sender["esh"] < amount:
         return response.json({"error": "Insufficient funds"}, status=400)
+    if sender["user_id"] == to_user_id:
+        return response.json({"error": "Cannot transfer to yourself"}, status=400)
 
     async with app.ctx.db_pool.acquire() as conn:
         async with conn.transaction():
+            current_balance = await conn.fetchval("SELECT esh FROM users WHERE user_id = $1 FOR UPDATE",
+                                                  sender["user_id"])
+            if current_balance < amount:
+                return response.json({"error": "Insufficient funds"}, status=400)
+
             from_balance = await conn.fetchval(
                 "UPDATE users SET esh = esh - $1 WHERE user_id = $2 RETURNING esh",
-                amount,
-                sender["user_id"],
+                amount, sender["user_id"],
             )
             to_balance = await conn.fetchval(
                 "UPDATE users SET esh = esh + $1 WHERE user_id = $2 RETURNING esh",
-                amount,
-                to_user_id,
+                amount, to_user_id,
             )
             if to_balance is None:
                 raise Exception("Recipient not found")
@@ -241,6 +390,8 @@ async def user_transfer(request):
     await broadcast(
         {"type": "coins_update", "user_id": to_user_id, "esh": to_balance}
     )
+    await broadcast_leaderboard(app.ctx.db_pool)
+    await broadcast_users(app.ctx.db_pool)
 
     return response.json({"from_balance": from_balance, "to_balance": to_balance})
 
@@ -250,16 +401,11 @@ async def user_transfer(request):
 async def get_users(request):
     user = request.ctx.user
     async with app.ctx.db_pool.acquire() as conn:
-        users = await conn.fetch("SELECT * FROM users WHERE username IS NOT NULL")
+        users_records = await conn.fetch(
+            "SELECT user_id, username, is_admin FROM users WHERE username IS NOT NULL AND user_id != $1",
+            user['user_id'])
 
-    if user["is_admin"]:
-        result = [dict(u) for u in users]
-    else:
-        result = [
-            {"user_id": u["user_id"], "username": u["username"], "is_admin": u["is_admin"]}
-            for u in users
-        ]
-    return response.json(result)
+    return response.json([dict(u) for u in users_records])
 
 
 # --- WebSocket Route ---
@@ -275,23 +421,32 @@ async def feed(request, ws):
     if not user:
         return
 
-    logger.info(f"WebSocket connection opened for user: {user['username']}")
+    logger.info(f"WebSocket connection opened for user: {user.get('username', user['user_key'])}")
     WEBSOCKETS.add(ws)
 
-    # Send initial state
-    if PINNED_MESSAGE:
-        await ws.send(json.dumps({"type": "pinned", "text": PINNED_MESSAGE}))
-
     try:
+        if PINNED_MESSAGE:
+            await ws.send(json.dumps({"type": "pinned", "text": PINNED_MESSAGE}))
+
+        async with app.ctx.db_pool.acquire() as conn:
+            users = await conn.fetch("SELECT user_id, user_key, username, is_admin, esh FROM users ORDER BY username")
+            leaderboard = await conn.fetch(
+                "SELECT user_id, username, esh FROM users WHERE username IS NOT NULL ORDER BY esh DESC LIMIT 10")
+
+        await ws.send(json.dumps({"type": "users_update", "users": [dict(u) for u in users]}))
+        await ws.send(json.dumps({"type": "leaderboard", "users": [dict(u) for u in leaderboard]}))
+        await ws.send(json.dumps({"type": "timer_update", "state": TIMER_STATE}))
+
+
         while True:
-            # Keep connection alive
-            await asyncio.sleep(60)
+            await ws.recv()
+
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user.get('username', user['user_key'])}: {e}")
     finally:
         WEBSOCKETS.remove(ws)
-        logger.info(f"WebSocket connection closed for user: {user['username']}")
+        logger.info(f"WebSocket connection closed for user: {user.get('username', user['user_key'])}")
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
-
-

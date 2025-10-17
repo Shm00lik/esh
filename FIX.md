@@ -1,0 +1,1 @@
+* just fix the bug where on mobile the input button on homepage requires scrolling, i want it to fit exactly in the bottom of the screen, no scrolling in home page should be necessary... the chat messages container itsel can be scrollable but not the page! 
