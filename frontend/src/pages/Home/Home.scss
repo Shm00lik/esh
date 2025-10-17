@@ -1,0 +1,26 @@
+.chat-area {
+  flex-grow: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse; /* New messages appear at the bottom */
+  padding: 8px;
+  direction: ltr; /* Ensure content inside is LTR */
+}
+
+.chat-message {
+  background-color: #f1f1f1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  max-width: 80%;
+  align-self: flex-start; /* Align messages to the start (left) */
+  transition: opacity 3s ease-out; /* 3-second fade-out transition */
+}
+
+.pinned-message {
+    background-color: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 1rem;
+}

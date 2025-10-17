@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { createQrCode, getAllUsers, pinMessage, removePinnedMessage, updateUserBalance } from '../../api/ApiClient';
+import { createQrCode, pinMessage, removePinnedMessage, updateUserBalance } from '../../api/ApiClient';
 import {
   Box, Button, Container, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography, Modal, Snackbar, Alert, Grid
 } from '@mui/material';
+import { useWebSocket } from '../../contexts/SocketContext';
+import { User } from '../../types';
 
 const modalStyle = {
   position: 'absolute' as 'absolute',
@@ -18,28 +20,20 @@ const modalStyle = {
 };
 
 const Panel = () => {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [pinnedMessage, setPinnedMessage] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [openModal, setOpenModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [balanceChange, setBalanceChange] = useState(0);
   const [snackbar, setSnackbar] = useState<{ open: boolean, message: string, severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
-
-  const fetchUsers = async () => {
-    try {
-      const response = await getAllUsers();
-      if (response.data && Array.isArray(response.data)) {
-        setUsers(response.data);
-      }
-    } catch (error) {
-      handleSnackbarOpen('Failed to fetch users.', 'error');
-    }
-  };
+  const lastMessage = useWebSocket();
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+      if (lastMessage && lastMessage.type === 'users_update') {
+          setUsers(lastMessage.users);
+      }
+  }, [lastMessage]);
 
   const handleCreateQr = async () => {
     try {
@@ -80,18 +74,17 @@ const Panel = () => {
     setBalanceChange(0);
   };
 
-  const handleUpdateBalance = async () => {
+  const handleUpdateBalance = async (change: number) => {
     if (!selectedUser) return;
     try {
-      await updateUserBalance(selectedUser.user_id, balanceChange);
+      await updateUserBalance(selectedUser.user_id, change);
       handleSnackbarOpen(`Balance updated for ${selectedUser.username}.`, 'success');
-      handleCloseModal();
-      fetchUsers();
+      // No longer need to manually fetch, WebSocket will update the list
     } catch (error) {
       handleSnackbarOpen('Failed to update balance.', 'error');
     }
   };
-
+  
   const handleSnackbarOpen = (message: string, severity: 'success' | 'error') => setSnackbar({ open: true, message, severity });
   const handleSnackbarClose = () => setSnackbar({ ...snackbar, open: false });
 
@@ -100,14 +93,14 @@ const Panel = () => {
       <Typography variant="h3" component="h1" gutterBottom>Admin Panel</Typography>
 
       <Grid container spacing={3}>
-        <Grid >
+        <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography variant="h5" gutterBottom>User Management</Typography>
             <Button variant="contained" onClick={handleCreateQr}>Create User QR Code</Button>
             {qrCode && <Box mt={2} sx={{ textAlign: 'center' }}><Typography>New User QR Code:</Typography><img src={qrCode} alt="New User QR Code" style={{ maxWidth: '100%', height: 'auto' }} /></Box>}
           </Paper>
         </Grid>
-        <Grid>
+        <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography variant="h5" gutterBottom>Pinned Message</Typography>
             <TextField label="Message to pin" fullWidth value={pinnedMessage} onChange={(e) => setPinnedMessage(e.target.value)} sx={{ mb: 2 }}/>
@@ -117,8 +110,8 @@ const Panel = () => {
             </Box>
           </Paper>
         </Grid>
-        <Grid>
-            <Typography variant="h5" gutterBottom sx={{mt: 2}}>Users</Typography>
+        <Grid item xs={12}>
+            <Typography variant="h5" gutterBottom sx={{mt: 2}}>Live Users</Typography>
             <TableContainer component={Paper}>
                 <Table>
                 <TableHead>
@@ -133,12 +126,14 @@ const Panel = () => {
                 <TableBody>
                     {users.map((user) => (
                     <TableRow key={user.user_id}>
-                        <TableCell>{user.username}</TableCell>
+                        <TableCell>{user.username || "N/A"}</TableCell>
                         <TableCell>{user.user_id}</TableCell>
                         <TableCell align="right">{user.esh}</TableCell>
                         <TableCell>{user.is_admin ? 'Yes' : 'No'}</TableCell>
                         <TableCell align="center">
-                        <Button size="small" onClick={() => handleOpenBalanceModal(user)}>Update Balance</Button>
+                          <Button size="small" variant="outlined" color="success" onClick={() => handleUpdateBalance(1)} sx={{mr: 0.5}}>+</Button>
+                          <Button size="small" variant="outlined" color="error" onClick={() => handleUpdateBalance(-1)} sx={{ml: 0.5}}>-</Button>
+                          <Button size="small" onClick={() => handleOpenBalanceModal(user)} sx={{ml:1}}>Custom</Button>
                         </TableCell>
                     </TableRow>
                     ))}
@@ -153,7 +148,7 @@ const Panel = () => {
           <Typography variant="h6">Update balance for {selectedUser?.username}</Typography>
           <Typography sx={{ mt: 1 }}>Current balance: {selectedUser?.esh}</Typography>
           <TextField label="Change amount (+/-)" type="number" fullWidth value={balanceChange} onChange={(e) => setBalanceChange(parseInt(e.target.value, 10) || 0)} sx={{ mt: 2 }} />
-          <Button onClick={handleUpdateBalance} sx={{ mt: 2 }} variant="contained">Update</Button>
+          <Button onClick={() => {handleUpdateBalance(balanceChange); handleCloseModal();}} sx={{ mt: 2 }} variant="contained">Update</Button>
         </Box>
       </Modal>
 
@@ -165,4 +160,3 @@ const Panel = () => {
 };
 
 export default Panel;
-

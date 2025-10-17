@@ -1,0 +1,38 @@
+.leaderboard-container {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.leaderboard-title {
+  font-weight: 800 !important;
+  color: #1a237e;
+  margin-bottom: 2rem !important;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}
+
+.rank-number {
+  font-weight: 700 !important;
+  color: #c51162;
+}
+
+.esh-balance {
+    font-weight: 700 !important;
+    color: #00c853;
+}
+
+.rank-0 {
+  background-color: #fffde7 !important; /* First place */
+  transform: scale(1.02);
+  transition: transform 0.3s ease-in-out;
+}
+.rank-1 {
+  background-color: #f1f8e9 !important; /* Second place */
+}
+.rank-2 {
+  background-color: #e3f2fd !important; /* Third place */
+}
+
+.MuiTableCell-root {
+    border-bottom: 1px solid rgba(224, 224, 224, 0.5) !important;
+    padding: 20px !important;
+}
