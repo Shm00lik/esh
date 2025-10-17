@@ -98,7 +98,9 @@ async def create_qr(request):
             user_key,
         )
 
-    qr_img = qrcode.make(user_key)
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    full_url = f"{frontend_url}/init?user_key={user_key}"
+    qr_img = qrcode.make(full_url)
     buffered = io.BytesIO()
     qr_img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -159,9 +161,20 @@ async def update_balance(request):
 @auth_required
 async def user_login(request):
     username = request.json.get("username")
+    if not username:
+        return response.json({"error": "Username cannot be empty"}, status=400)
     user = request.ctx.user
 
     async with app.ctx.db_pool.acquire() as conn:
+        # Check if username is already taken by another user
+        existing_user = await conn.fetchval(
+            "SELECT 1 FROM users WHERE username = $1 AND user_id != $2",
+            username,
+            user["user_id"],
+        )
+        if existing_user:
+            return response.json({"error": "Username is already taken"}, status=409)
+
         await conn.execute(
             "UPDATE users SET username = $1 WHERE user_id = $2",
             username,
@@ -280,3 +293,5 @@ async def feed(request, ws):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
+
+

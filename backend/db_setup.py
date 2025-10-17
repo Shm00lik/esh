@@ -21,7 +21,7 @@ async def main():
                        (
                            user_id  VARCHAR(36) PRIMARY KEY,
                            user_key VARCHAR(36) NOT NULL UNIQUE,
-                           username VARCHAR(50),
+                           username VARCHAR(50) UNIQUE,
                            is_admin BOOLEAN DEFAULT FALSE,
                            esh      INTEGER DEFAULT 100
                        );
@@ -43,3 +43,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
