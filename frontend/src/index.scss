@@ -1,0 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=Assistant:wght@200;300;400;500;600;700;800&display=swap");
+
+* {
+  font-family: "Assistant" !important;
+}
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  color-scheme: light;
+  color: rgba(0, 0, 0, 0.85);
+  background-color: #eee;
+}
+
+body {
+  margin: 0;
+
+  width: 100vw;
+  height: 100vh;
+}
